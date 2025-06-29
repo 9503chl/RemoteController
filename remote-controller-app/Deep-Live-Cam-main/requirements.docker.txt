@@ -1,0 +1,25 @@
+# This file is for the Docker environment (Debian-based, CPU)
+
+numpy>=1.23.5,<2
+typing-extensions>=4.8.0
+opencv-python==4.10.0.84
+cv2_enumerate_cameras==1.1.15
+onnx==1.16.0
+insightface==0.7.3
+psutil==5.9.8
+# tk and customtkinter are for GUI, which are not needed in the headless docker container
+# tk==0.1.0
+# customtkinter==5.2.2
+pillow==11.1.0
+torch==2.3.0
+torchvision==0.18.0
+onnxruntime==1.17.0
+# tensorflow-cpu is not available for linux aarch64 on python 3.10. Remove for now.
+# tensorflow-cpu
+opennsfw2==0.10.2
+protobuf==4.23.2
+Flask>=2.0
+werkzeug
+gunicorn==22.0.0
+Flask-Cors==4.0.1
+Pillow>=10.0.0 

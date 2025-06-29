@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  next-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - python-backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://python-backend:8000
+
+  python-backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    volumes:
+      - ./Deep-Live-Cam-main/models:/app/models
+      - ./Deep-Live-Cam-main/output:/app/output
+    ports:
+      - "8000:8000"
+    # The following command keeps the container running, useful for debugging
+    # command: tail -f /dev/null 

@@ -1,0 +1,34 @@
+services:
+  frontend:
+    build:
+      context: ./remote-controller-app
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_APP_PIN=1234
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./remote-controller-app/Deep-Live-Cam-main
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    # privileged mode is no longer needed as the browser handles webcam access.
+    volumes:
+      # Mount a volume for the models to avoid re-downloading them every time
+      - deep-live-cam-models:/root/.insightface/models
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  deep-live-cam-models: 
