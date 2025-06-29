@@ -10,6 +10,8 @@ from modules.face_analyser import get_one_face
 from modules.processors.frame.core import get_frame_processors_modules
 from PIL import Image
 import threading
+import sys
+import glob
 
 app = Flask(__name__)
 CORS(app)
@@ -18,6 +20,24 @@ CORS(app)
 SOURCE_FACE = None
 FRAME_PROCESSORS = None
 MOUTH_MASK_ENABLED = False
+PIN_CODE = "1234"  # For demonstration purposes
+CURRENT_FILTER = None
+
+def find_filter_path(filter_name):
+    """Searches for a filter in the media directory, first as .png, then as .jpg."""
+    secure_name = secure_filename(filter_name)
+    
+    # 1. Check for .png
+    png_path = os.path.join('media', f"{secure_name}.png")
+    if os.path.exists(png_path):
+        return png_path
+        
+    # 2. Check for .jpg
+    jpg_path = os.path.join('media', f"{secure_name}.jpg")
+    if os.path.exists(jpg_path):
+        return jpg_path
+        
+    return None
 
 def initialize_processors():
     """Initialize the frame processors."""
@@ -37,6 +57,111 @@ def initialize_processors():
         if hasattr(processor, 'pre_start'):
             processor.pre_start()
     print("Frame processors initialized:", processors)
+
+@app.route('/login', methods=['POST'])
+def login():
+    """Authenticate the user with a PIN."""
+    data = request.get_json()
+    if not data or 'pin' not in data:
+        return jsonify({"error": "PIN not provided"}), 400
+    
+    if data['pin'] == PIN_CODE:
+        return jsonify({"status": "login_success"})
+    else:
+        return jsonify({"error": "Invalid PIN"}), 403
+
+@app.route('/check_filter', methods=['POST'])
+def check_filter():
+    """Checks if a filter file exists."""
+    data = request.get_json()
+    if not data or 'filter_name' not in data:
+        return jsonify({"error": "Filter name not provided"}), 400
+    
+    filter_name = data['filter_name']
+    found_path = find_filter_path(filter_name)
+    
+    if not found_path:
+        return jsonify({"error": f"Filter '{filter_name}' not found"}), 404
+    
+    print(f"Filter '{found_path}' confirmed.")
+    return jsonify({"status": "filter_exists", "path": found_path})
+
+@app.route('/set_filter', methods=['POST'])
+def set_filter():
+    """Sets the filter to be applied."""
+    global CURRENT_FILTER
+    data = request.get_json()
+    if not data or 'filter_name' not in data:
+        return jsonify({"error": "Filter name not provided"}), 400
+        
+    filter_name = data['filter_name']
+    found_path = find_filter_path(filter_name)
+    
+    if not found_path:
+        return jsonify({"error": f"Cannot set filter: '{filter_name}' not found"}), 404
+
+    CURRENT_FILTER = found_path
+    # Example of setting it globally for other parts of the app to use
+    g.source_path = CURRENT_FILTER
+    
+    print(f"Filter set to: {CURRENT_FILTER}")
+    return jsonify({"status": "filter_set", "filter": CURRENT_FILTER})
+
+@app.route('/start', methods=['POST'])
+def start_processing():
+    """
+    Loads the selected filter image, finds a face, 
+    and prepares the face swapping processor.
+    """
+    global SOURCE_FACE
+    if CURRENT_FILTER is None:
+        print("Start failed: No filter set.")
+        return jsonify({"error": "필터를 먼저 설정해야 합니다."}), 400
+        
+    try:
+        # Load the image from the path stored in CURRENT_FILTER
+        img = cv2.imread(CURRENT_FILTER)
+        if img is None:
+            return jsonify({'error': '필터 이미지 파일을 불러올 수 없습니다.'}), 400
+        
+        # Get one face from the loaded image
+        face = get_one_face(img)
+        if not face:
+            return jsonify({'error': '필터 이미지에서 얼굴을 찾을 수 없습니다.'}), 400
+        
+        # Set the global source face and initialize processors for face swapping
+        SOURCE_FACE = face
+        # Assuming mouth_mask is not needed for this controller version
+        initialize_processors() 
+        
+        print(f"START successful. Source face set from: {CURRENT_FILTER}")
+        return jsonify({"status": "started"})
+        
+    except Exception as e:
+        print(f"Error during start processing: {e}")
+        return jsonify({"error": "필터 준비 중 오류가 발생했습니다."}), 500
+
+@app.route('/live', methods=['POST'])
+def live_processing():
+    """Placeholder to toggle a live mode."""
+    print("LIVE command received.")
+    # Add your live mode logic here
+    return jsonify({"status": "live_mode_toggled"})
+
+@app.route('/reset', methods=['POST'])
+def reset_server():
+    """Resets the application."""
+    print("RESET command received. The server will attempt to restart.")
+    
+    # This is a simple way to trigger a restart. 
+    # Note: This will not work correctly with some server runners like Gunicorn's default worker type.
+    # It's generally better to manage the process from outside (e.g., Docker, systemd).
+    def restart():
+        # Wait a moment to send the response before restarting
+        threading.Timer(1.0, lambda: os.execv(sys.executable, ['python'] + sys.argv)).start()
+
+    restart()
+    return jsonify({"status": "resetting"})
 
 @app.route('/set_source', methods=['POST'])
 def set_source():
@@ -91,6 +216,15 @@ def process_frame():
 
     if target_frame is None:
         return jsonify({'error': 'Could not decode frame'}), 400
+
+    # If a filter is set, you might apply it here as an overlay, for example
+    if CURRENT_FILTER:
+        try:
+            filter_img = cv2.imread(CURRENT_FILTER, cv2.IMREAD_UNCHANGED)
+            # This is a placeholder for actual filter application logic
+            # For example, resizing and overlaying the filter
+        except Exception as e:
+            print(f"Could not apply filter: {e}")
 
     # Process the frame using the stored source face
     for processor in FRAME_PROCESSORS:

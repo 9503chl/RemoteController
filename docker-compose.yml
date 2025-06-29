@@ -15,14 +15,13 @@ services:
 
   backend:
     build:
-      context: ./remote-controller-app/Deep-Live-Cam-main
-      dockerfile: Dockerfile
+      context: ./remote-controller-app
+      dockerfile: backend.Dockerfile
     ports:
       - "8000:8000"
-    # privileged mode is no longer needed as the browser handles webcam access.
     volumes:
-      # Mount a volume for the models to avoid re-downloading them every time
       - deep-live-cam-models:/root/.insightface/models
+    command: ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8000", "--timeout", "120", "api_server:app"]
     networks:
       - app-network
 
