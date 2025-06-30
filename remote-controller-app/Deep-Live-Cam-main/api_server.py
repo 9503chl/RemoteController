@@ -20,8 +20,18 @@ CORS(app)
 SOURCE_FACE = None
 FRAME_PROCESSORS = None
 MOUTH_MASK_ENABLED = False
-PIN_CODE = "1234"  # For demonstration purposes
 CURRENT_FILTER = None
+
+def get_pin_from_file():
+    """Reads the PIN from the password.txt file."""
+    try:
+        with open("password.txt", "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        print("ERROR: password.txt not found. Please create it.")
+        return None
+
+PIN_CODE = get_pin_from_file()
 
 def find_filter_path(filter_name):
     """Searches for a filter in the media directory, first as .png, then as .jpg."""
@@ -65,6 +75,9 @@ def login():
     if not data or 'pin' not in data:
         return jsonify({"error": "PIN not provided"}), 400
     
+    if PIN_CODE is None:
+        return jsonify({"error": "Server PIN not configured"}), 500
+
     if data['pin'] == PIN_CODE:
         return jsonify({"status": "login_success"})
     else:

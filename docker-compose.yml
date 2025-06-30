@@ -7,7 +7,6 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
-      - NEXT_PUBLIC_APP_PIN=1234
     depends_on:
       - backend
     networks:
