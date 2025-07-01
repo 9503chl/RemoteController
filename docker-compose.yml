@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
     networks:
@@ -20,7 +20,9 @@ services:
       - "8000:8000"
     volumes:
       - deep-live-cam-models:/root/.insightface/models
-    command: ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8000", "--timeout", "120", "api_server:app"]
+      - /dev:/dev
+    privileged: true
+    command: ["python", "simple_camera_server.py"]
     networks:
       - app-network
 

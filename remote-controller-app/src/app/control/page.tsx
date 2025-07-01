@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 // A simple modal component
 const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message: string, onConfirm: () => void, onCancel: () => void }) => (
@@ -32,47 +32,10 @@ export default function ControlPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string>('');
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [cameras, setCameras] = useState<Array<{ index: number; name: string; is_current: boolean }>>([]);
+  const [currentCamera, setCurrentCamera] = useState<number>(0);
   
   const API_BASE_URL = "http://127.0.0.1:8000";
-
-  useEffect(() => {
-    const getDevices = async () => {
-      try {
-        const availableDevices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = availableDevices.filter(d => d.kind === 'videoinput');
-        setDevices(videoDevices);
-        if (videoDevices.length > 0) {
-          setSelectedDevice(videoDevices[0].deviceId);
-        }
-      } catch (err) {
-        console.error("Error enumerating devices:", err);
-        showStatus("웹캠 목록을 가져올 수 없습니다.");
-      }
-    };
-    getDevices();
-  }, []);
-
-  const connectWebcam = async () => {
-    if (!selectedDevice) {
-      showStatus("연결할 웹캠을 선택해주세요.");
-      return;
-    }
-    if (videoRef.current) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: selectedDevice } }
-        });
-        videoRef.current.srcObject = stream;
-        showStatus("웹캠이 연결되었습니다.");
-      } catch (err) {
-        console.error("Error accessing webcam:", err);
-        showStatus("웹캠에 접근할 수 없습니다.");
-      }
-    }
-  };
 
   const showStatus = (message: string, duration = 3000) => {
     setStatusMessage(message);
@@ -140,40 +103,46 @@ export default function ControlPage() {
       setIsStarted(false); // Also reset on reset
   }
 
+  const fetchCameras = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/get_cameras`);
+      const data = await response.json();
+      if (response.ok && data.cameras) {
+        setCameras(data.cameras);
+        setCurrentCamera(data.current_camera);
+      } else {
+        showStatus("카메라 목록을 가져올 수 없습니다.");
+      }
+    } catch (err) {
+      showStatus("카메라 목록 가져오기 실패.");
+      console.error(err);
+    }
+  };
+
+  const handleCameraChange = async (cameraIndex: number) => {
+    const data = await handleApiCall(
+      'set_camera',
+      { body: JSON.stringify({ camera_index: cameraIndex }) } as RequestInit,
+      `카메라 변경됨: ${cameras.find(c => c.index === cameraIndex)?.name || cameraIndex}`
+    );
+    if (data) {
+      setCurrentCamera(cameraIndex);
+      // Update cameras list to reflect current selection
+      setCameras(cameras.map(camera => ({ 
+        ...camera, 
+        is_current: camera.index === cameraIndex 
+      })));
+    }
+  };
+
+  useEffect(() => {
+    fetchCameras();
+  }, []);
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-md">
         
-        <div className="mb-4">
-          <label htmlFor="webcam" className="mb-2 block text-sm font-bold text-gray-700">
-            웹캠 선택
-          </label>
-          <div className="flex">
-            <select
-              id="webcam"
-              value={selectedDevice}
-              onChange={(e) => setSelectedDevice(e.target.value)}
-              className="focus:shadow-outline flex-grow appearance-none rounded-l border bg-white px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
-            >
-              {devices.map(device => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Camera ${devices.indexOf(device) + 1}`}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={connectWebcam}
-              className="rounded-r bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
-            >
-              연결
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <video ref={videoRef} autoPlay playsInline className="w-full rounded-lg bg-black" muted/>
-        </div>
-
         <div className="mb-4">
           <label htmlFor="filterName" className="mb-2 block text-sm font-bold text-gray-700">
             필터 명
@@ -192,6 +161,36 @@ export default function ControlPage() {
               className="rounded-r bg-gray-600 px-4 py-2 font-bold text-white hover:bg-gray-700"
             >
               확인
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="cameraSelect" className="mb-2 block text-sm font-bold text-gray-700">
+            카메라 선택
+          </label>
+          <div className="flex">
+            <select
+              id="cameraSelect"
+              value={currentCamera}
+              onChange={(e) => handleCameraChange(Number(e.target.value))}
+              className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
+            >
+              {cameras.length > 0 ? (
+                cameras.map((camera) => (
+                  <option key={camera.index} value={camera.index}>
+                    {camera.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">카메라를 찾는 중...</option>
+              )}
+            </select>
+            <button
+              onClick={fetchCameras}
+              className="rounded-r bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+            >
+              새로고침
             </button>
           </div>
         </div>
