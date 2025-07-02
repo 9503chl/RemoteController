@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // A simple modal component
 const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message: string, onConfirm: () => void, onCancel: () => void }) => (
@@ -32,8 +32,11 @@ export default function ControlPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
-  const [cameras, setCameras] = useState<Array<{ index: number; name: string; is_current: boolean }>>([]);
-  const [currentCamera, setCurrentCamera] = useState<number>(0);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   
   const API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -103,41 +106,61 @@ export default function ControlPage() {
       setIsStarted(false); // Also reset on reset
   }
 
-  const fetchCameras = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/get_cameras`);
-      const data = await response.json();
-      if (response.ok && data.cameras) {
-        setCameras(data.cameras);
-        setCurrentCamera(data.current_camera);
-      } else {
-        showStatus("카메라 목록을 가져올 수 없습니다.");
-      }
-    } catch (err) {
-      showStatus("카메라 목록 가져오기 실패.");
-      console.error(err);
-    }
-  };
-
-  const handleCameraChange = async (cameraIndex: number) => {
-    const data = await handleApiCall(
-      'set_camera',
-      { body: JSON.stringify({ camera_index: cameraIndex }) } as RequestInit,
-      `카메라 변경됨: ${cameras.find(c => c.index === cameraIndex)?.name || cameraIndex}`
-    );
-    if (data) {
-      setCurrentCamera(cameraIndex);
-      // Update cameras list to reflect current selection
-      setCameras(cameras.map(camera => ({ 
-        ...camera, 
-        is_current: camera.index === cameraIndex 
-      })));
+  const handleCameraChange = async (deviceId: string) => {
+    setSelectedDevice(deviceId);
+    if (isWebcamActive) {
+      // 현재 웹캠이 활성화되어 있다면 자동으로 새 카메라로 전환
+      disconnectWebcam();
+      setTimeout(() => connectWebcam(), 500);
     }
   };
 
   useEffect(() => {
-    fetchCameras();
+    const getDevices = async () => {
+      try {
+        const availableDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = availableDevices.filter(d => d.kind === 'videoinput');
+        setDevices(videoDevices);
+        if (videoDevices.length > 0) {
+          setSelectedDevice(videoDevices[0].deviceId);
+        }
+      } catch (err) {
+        console.error("Error enumerating devices:", err);
+        showStatus("웹캠 목록을 가져올 수 없습니다.");
+      }
+    };
+    getDevices();
   }, []);
+
+  const connectWebcam = async () => {
+    if (!selectedDevice) {
+      showStatus("연결할 웹캠을 선택해주세요.");
+      return;
+    }
+    if (videoRef.current) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: selectedDevice } }
+        });
+        videoRef.current.srcObject = stream;
+        setIsWebcamActive(true);
+        showStatus("웹캠이 연결되었습니다.");
+      } catch (err) {
+        console.error("Error accessing webcam:", err);
+        showStatus("웹캠에 접근할 수 없습니다.");
+      }
+    }
+  };
+
+  const disconnectWebcam = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      setIsWebcamActive(false);
+      showStatus("웹캠 연결이 해제되었습니다.");
+    }
+  };
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
@@ -167,19 +190,19 @@ export default function ControlPage() {
 
         <div className="mb-4">
           <label htmlFor="cameraSelect" className="mb-2 block text-sm font-bold text-gray-700">
-            카메라 선택
+            웹캠 선택
           </label>
           <div className="flex">
             <select
               id="cameraSelect"
-              value={currentCamera}
-              onChange={(e) => handleCameraChange(Number(e.target.value))}
+              value={selectedDevice}
+              onChange={(e) => handleCameraChange(e.target.value)}
               className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
             >
-              {cameras.length > 0 ? (
-                cameras.map((camera) => (
-                  <option key={camera.index} value={camera.index}>
-                    {camera.name}
+              {devices.length > 0 ? (
+                devices.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Camera ${devices.indexOf(device) + 1}`}
                   </option>
                 ))
               ) : (
@@ -187,13 +210,30 @@ export default function ControlPage() {
               )}
             </select>
             <button
-              onClick={fetchCameras}
-              className="rounded-r bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+              onClick={isWebcamActive ? disconnectWebcam : connectWebcam}
+              className={`rounded-r px-4 py-2 font-bold text-white ${
+                isWebcamActive 
+                  ? 'bg-red-600 hover:bg-red-700' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              새로고침
+              {isWebcamActive ? '해제' : '연결'}
             </button>
           </div>
         </div>
+
+        {isWebcamActive && (
+          <div className="mb-4">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full rounded-lg bg-black" 
+              muted
+            />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+          </div>
+        )}
         
         <div className="mb-4 grid grid-cols-2 gap-4">
             <button

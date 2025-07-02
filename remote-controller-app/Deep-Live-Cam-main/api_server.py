@@ -51,64 +51,6 @@ def find_filter_path(filter_name):
         
     return None
 
-def get_available_cameras():
-    """Returns a list of available camera names and indices."""
-    if platform.system() == "Windows":
-        try:
-            # For Windows, we'll use a simple OpenCV approach since FilterGraph might not be available
-            camera_indices = []
-            camera_names = []
-            
-            # Try first 10 camera indices
-            for i in range(10):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    camera_indices.append(i)
-                    camera_names.append(f"Camera {i}")
-                    cap.release()
-            
-            if not camera_names:
-                return [], ["No cameras found"]
-            
-            return camera_indices, camera_names
-            
-        except Exception as e:
-            print(f"Error detecting cameras: {str(e)}")
-            return [], ["No cameras found"]
-    else:
-        # Unix-like systems (Linux/Mac) camera detection
-        camera_indices = []
-        camera_names = []
-
-        if platform.system() == "Darwin":  # macOS specific handling
-            # Try to open the default FaceTime camera first
-            cap = cv2.VideoCapture(0)
-            if cap.isOpened():
-                camera_indices.append(0)
-                camera_names.append("FaceTime Camera")
-                cap.release()
-
-            # On macOS, additional cameras typically use indices 1 and 2
-            for i in [1, 2]:
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    camera_indices.append(i)
-                    camera_names.append(f"Camera {i}")
-                    cap.release()
-        else:
-            # Linux camera detection - test first 10 indices
-            for i in range(10):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    camera_indices.append(i)
-                    camera_names.append(f"Camera {i}")
-                    cap.release()
-
-        if not camera_names:
-            return [], ["No cameras found"]
-
-        return camera_indices, camera_names
-
 def initialize_processors():
     """Initialize the frame processors."""
     global FRAME_PROCESSORS
@@ -127,6 +69,23 @@ def initialize_processors():
         if hasattr(processor, 'pre_start'):
             processor.pre_start()
     print("Frame processors initialized:", processors)
+
+def list_cameras():
+    """Lists available camera devices."""
+    cameras = []
+    index = 0
+    while True:
+        cap = cv2.VideoCapture(index)
+        if not cap.isOpened():
+            break
+        cameras.append({
+            "index": index,
+            "name": f"Camera {index}",
+            "is_current": index == CURRENT_CAMERA_INDEX
+        })
+        cap.release()
+        index += 1
+    return cameras
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -238,56 +197,31 @@ def reset_server():
 
 @app.route('/get_cameras', methods=['GET'])
 def get_cameras():
-    """Returns the list of available cameras."""
-    try:
-        camera_indices, camera_names = get_available_cameras()
-        cameras = []
-        for idx, name in zip(camera_indices, camera_names):
-            cameras.append({
-                "index": idx,
-                "name": name,
-                "is_current": idx == CURRENT_CAMERA_INDEX
-            })
-        
-        print(f"Available cameras: {cameras}")
-        return jsonify({
-            "status": "success",
-            "cameras": cameras,
-            "current_camera": CURRENT_CAMERA_INDEX
-        })
-    except Exception as e:
-        print(f"Error getting cameras: {e}")
-        return jsonify({"error": "Failed to get camera list"}), 500
+    """Returns a list of available cameras on the server."""
+    available_cameras = list_cameras()
+    return jsonify({
+        "cameras": available_cameras,
+        "current_camera": CURRENT_CAMERA_INDEX
+    })
 
 @app.route('/set_camera', methods=['POST'])
 def set_camera():
-    """Sets the current camera index."""
+    """Sets the active camera device."""
     global CURRENT_CAMERA_INDEX
-    
     data = request.get_json()
     if not data or 'camera_index' not in data:
         return jsonify({"error": "Camera index not provided"}), 400
-    
-    camera_index = data['camera_index']
-    
-    try:
-        # Validate camera index by trying to open it
-        cap = cv2.VideoCapture(camera_index)
-        if not cap.isOpened():
-            cap.release()
-            return jsonify({"error": f"Camera {camera_index} is not available"}), 400
-        cap.release()
-        
-        CURRENT_CAMERA_INDEX = camera_index
-        print(f"Camera set to index: {camera_index}")
-        return jsonify({
-            "status": "camera_set",
-            "camera_index": camera_index
-        })
-        
-    except Exception as e:
-        print(f"Error setting camera: {e}")
-        return jsonify({"error": "Failed to set camera"}), 500
+
+    new_index = data['camera_index']
+
+    available_cameras = list_cameras()
+    if not any(c['index'] == new_index for c in available_cameras):
+        return jsonify({"error": f"Camera index {new_index} is not available."}), 404
+
+    CURRENT_CAMERA_INDEX = new_index
+    print(f"Camera set to index: {CURRENT_CAMERA_INDEX}")
+
+    return jsonify({"status": "camera_set", "current_camera": CURRENT_CAMERA_INDEX})
 
 @app.route('/set_source', methods=['POST'])
 def set_source():

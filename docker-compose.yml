@@ -22,7 +22,7 @@ services:
       - deep-live-cam-models:/root/.insightface/models
       - /dev:/dev
     privileged: true
-    command: ["python", "simple_camera_server.py"]
+    command: ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8000", "--timeout", "120", "api_server:app"]
     networks:
       - app-network
 
