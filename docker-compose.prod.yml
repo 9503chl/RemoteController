@@ -26,8 +26,10 @@ services:
     build:
       context: ./remote-controller-app
       dockerfile: Dockerfile
+    ports:
+      - "4000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=https://fanxytv.com/api
+      - NEXT_PUBLIC_API_URL=http://fanxytv.com:8080/api
       - NODE_ENV=production
     depends_on:
       - backend
@@ -39,6 +41,8 @@ services:
     build:
       context: ./remote-controller-app
       dockerfile: backend.Dockerfile
+    ports:
+      - "8080:8000"
     volumes:
       - deep-live-cam-models:/root/.insightface/models
     environment:

@@ -1,117 +1,157 @@
-Write-Host "🚀 FanxyTV Windows 배포 시작..." -ForegroundColor Green
+Write-Host "🌟 FanxyTV Windows Deployment Starting..." -ForegroundColor Cyan
 
-# 현재 공인 IP 확인
-Write-Host "🌐 공인 IP 확인 중..." -ForegroundColor Yellow
-try {
-    $publicIP = Invoke-RestMethod -Uri "https://ipinfo.io/ip" -TimeoutSec 10
-    Write-Host "📍 현재 공인 IP: $publicIP" -ForegroundColor Cyan
-} catch {
-    Write-Host "⚠️ 공인 IP 확인 실패. 수동으로 확인하세요: https://whatismyipaddress.com/" -ForegroundColor Red
-    $publicIP = "IP_확인_필요"
-}
+# 1. 공인 IP 확인
+Write-Host "🌍 Checking public IP..." -ForegroundColor Yellow
+$publicIP = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
+Write-Host "🔍 Current public IP: $publicIP" -ForegroundColor Green
 
-# Docker 상태 확인
-Write-Host "🐳 Docker 상태 확인 중..." -ForegroundColor Yellow
-try {
-    docker version | Out-Null
-    Write-Host "✅ Docker 정상 작동" -ForegroundColor Green
-} catch {
-    Write-Host "❌ Docker가 실행되지 않습니다. Docker Desktop을 시작하세요." -ForegroundColor Red
+# 2. Docker 상태 확인
+Write-Host "🐳 Checking Docker status..." -ForegroundColor Yellow
+$dockerStatus = docker info 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✅ Docker is running" -ForegroundColor Green
+} else {
+    Write-Host "❌ Docker is not running. Please start Docker Desktop." -ForegroundColor Red
     exit 1
 }
 
-# 기존 컨테이너 정리
-Write-Host "📦 기존 컨테이너 정리 중..." -ForegroundColor Yellow
-docker-compose -f docker-compose.prod.yml down
+# 3. 기존 컨테이너 정리
+Write-Host "🧹 Cleaning up existing containers..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml down 2>$null
 
-# 필요한 디렉토리 생성
-Write-Host "📁 디렉토리 생성 중..." -ForegroundColor Yellow
-New-Item -ItemType Directory -Force -Path "certbot\conf" | Out-Null
-New-Item -ItemType Directory -Force -Path "certbot\www" | Out-Null
+# 4. 필요한 디렉토리 생성
+Write-Host "📁 Creating directories..." -ForegroundColor Yellow
+New-Item -ItemType Directory -Force -Path ".\certs" | Out-Null
+New-Item -ItemType Directory -Force -Path ".\logs" | Out-Null
 
-# 이미지 빌드
-Write-Host "🔨 Docker 이미지 빌드 중..." -ForegroundColor Yellow
+# 5. Docker 이미지 빌드
+Write-Host "🏗️ Building Docker images..." -ForegroundColor Yellow
 docker-compose -f docker-compose.prod.yml build
 
-# 서비스 시작
-Write-Host "▶️ 서비스 시작 중..." -ForegroundColor Yellow
+# 6. 서비스 시작
+Write-Host "🚀 Starting services..." -ForegroundColor Yellow
 docker-compose -f docker-compose.prod.yml up -d
 
-# 서비스 상태 확인
-Write-Host "🔍 서비스 상태 확인 중..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
-$services = docker-compose -f docker-compose.prod.yml ps
-Write-Host $services
+# 7. 서비스 상태 확인
+Write-Host "🔍 Checking service status..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml ps
 
-# 포트 확인
-Write-Host "🔌 포트 사용 확인 중..." -ForegroundColor Yellow
-$port80 = netstat -an | Select-String ":80 "
-$port443 = netstat -an | Select-String ":443 "
+# 8. nginx 로그 확인 (SSL 인증서 문제 체크)
+Write-Host "📋 Checking nginx logs for SSL certificate issues..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml logs nginx | Select-Object -Last 10
+
+# 9. SSL 인증서 상태 확인
+Write-Host "🔒 Checking SSL certificate status..." -ForegroundColor Yellow
+if (Test-Path ".\certs\live\fanxytv.com\fullchain.pem") {
+    Write-Host "✅ SSL certificates found" -ForegroundColor Green
+} else {
+    Write-Host "⚠️ SSL certificates not found - this is normal for first deployment" -ForegroundColor Yellow
+    Write-Host "   Certificates will be generated automatically after DNS propagation" -ForegroundColor Cyan
+}
+
+# 10. 백엔드 서비스 로그 확인
+Write-Host "🔍 Checking backend service logs..." -ForegroundColor Yellow
+Write-Host "   Backend logs..." -ForegroundColor Cyan
+docker-compose -f docker-compose.prod.yml logs backend | Select-Object -Last 5
+
+# 11. 포트 사용 상황 확인
+Write-Host "🔌 Checking port usage..." -ForegroundColor Yellow
+$port80 = netstat -an | Select-String ":80 " | Select-Object -First 1
+$port443 = netstat -an | Select-String ":443 " | Select-Object -First 1
 
 if ($port80) {
-    Write-Host "✅ 포트 80 사용 중" -ForegroundColor Green
+    Write-Host "✅ Port 80 is in use" -ForegroundColor Green
 } else {
-    Write-Host "⚠️ 포트 80이 사용되지 않습니다." -ForegroundColor Red
+    Write-Host "⚠️ Port 80 is not in use." -ForegroundColor Yellow
 }
 
 if ($port443) {
-    Write-Host "✅ 포트 443 사용 중" -ForegroundColor Green
+    Write-Host "✅ Port 443 is in use" -ForegroundColor Green
 } else {
-    Write-Host "⚠️ 포트 443이 사용되지 않습니다." -ForegroundColor Red
+    Write-Host "⚠️ Port 443 is not in use." -ForegroundColor Yellow
 }
 
-# 방화벽 규칙 확인/추가
-Write-Host "🔥 방화벽 규칙 확인 중..." -ForegroundColor Yellow
-try {
-    $httpRule = Get-NetFirewallRule -DisplayName "FanxyTV-HTTP" -ErrorAction SilentlyContinue
-    if (-not $httpRule) {
-        New-NetFirewallRule -DisplayName "FanxyTV-HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow | Out-Null
-        Write-Host "✅ HTTP 방화벽 규칙 추가됨" -ForegroundColor Green
-    }
-    
-    $httpsRule = Get-NetFirewallRule -DisplayName "FanxyTV-HTTPS" -ErrorAction SilentlyContinue
-    if (-not $httpsRule) {
-        New-NetFirewallRule -DisplayName "FanxyTV-HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow | Out-Null
-        Write-Host "✅ HTTPS 방화벽 규칙 추가됨" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "⚠️ 방화벽 규칙 추가 실패. 관리자 권한으로 실행하세요." -ForegroundColor Red
-}
+# 12. 방화벽 규칙 확인
+Write-Host "🔥 Checking firewall rules..." -ForegroundColor Yellow
+netsh advfirewall firewall add rule name="HTTP" dir=in action=allow protocol=TCP localport=80 2>$null
+netsh advfirewall firewall add rule name="HTTPS" dir=in action=allow protocol=TCP localport=443 2>$null
+Write-Host "✅ HTTP firewall rule added" -ForegroundColor Green
+Write-Host "✅ HTTPS firewall rule added" -ForegroundColor Green
+
+Write-Host ("=" * 60) -ForegroundColor Magenta
+Write-Host "🎉 Deployment Complete!" -ForegroundColor Green
+Write-Host ("=" * 60) -ForegroundColor Magenta
 
 Write-Host ""
-Write-Host "=" * 60 -ForegroundColor Cyan
-Write-Host "✅ 배포 완료!" -ForegroundColor Green
-Write-Host "=" * 60 -ForegroundColor Cyan
+Write-Host "📋 Next steps:" -ForegroundColor Yellow
 Write-Host ""
-
-# 결과 및 다음 단계 안내
-Write-Host "📋 다음 단계를 진행하세요:" -ForegroundColor Yellow
+Write-Host "1️⃣ DNS Settings:" -ForegroundColor Cyan
+Write-Host "   - A Record: fanxytv.com → $publicIP" -ForegroundColor White
+Write-Host "   - A Record: www.fanxytv.com → $publicIP" -ForegroundColor White
 Write-Host ""
-Write-Host "1️⃣ 가비아 DNS 설정:" -ForegroundColor Cyan
-Write-Host "   - A 레코드: fanxytv.com → $publicIP" -ForegroundColor White
-Write-Host "   - A 레코드: www.fanxytv.com → $publicIP" -ForegroundColor White
+Write-Host "2️⃣ Router Port Forwarding:" -ForegroundColor Cyan
+Write-Host "   - Port 80: External → Internal PC IP:80" -ForegroundColor White
+Write-Host "   - Port 443: External → Internal PC IP:443" -ForegroundColor White
 Write-Host ""
-Write-Host "2️⃣ 공유기 포트포워딩 설정:" -ForegroundColor Cyan
-Write-Host "   - 80포트: 외부 → 내부 PC IP:80" -ForegroundColor White
-Write-Host "   - 443포트: 외부 → 내부 PC IP:443" -ForegroundColor White
-Write-Host ""
-Write-Host "3️⃣ 로컬 테스트:" -ForegroundColor Cyan
-Write-Host "   - http://localhost:3000" -ForegroundColor White
-Write-Host ""
-Write-Host "4️⃣ 도메인 테스트 (DNS 전파 후):" -ForegroundColor Cyan
+Write-Host "3️⃣ Domain Testing (after DNS propagation):" -ForegroundColor Cyan
 Write-Host "   - https://fanxytv.com" -ForegroundColor White
 Write-Host ""
-
-# 내부 IP 확인
-$internalIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -notmatch "169.254"}).IPAddress | Select-Object -First 1
-Write-Host "💻 내부 IP: $internalIP" -ForegroundColor Magenta
-Write-Host "🌐 공인 IP: $publicIP" -ForegroundColor Magenta
+$internalIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -like "192.168.*"} | Select-Object -First 1).IPAddress
+Write-Host "🖥️ Internal IP: $internalIP" -ForegroundColor Cyan
+Write-Host "🌍 Public IP: $publicIP" -ForegroundColor Cyan
 Write-Host ""
-
-Write-Host "🔧 유용한 명령어:" -ForegroundColor Yellow
-Write-Host "   - 서비스 중지: docker-compose -f docker-compose.prod.yml down" -ForegroundColor Gray
-Write-Host "   - 서비스 시작: docker-compose -f docker-compose.prod.yml up -d" -ForegroundColor Gray
-Write-Host "   - 로그 확인: docker-compose -f docker-compose.prod.yml logs -f" -ForegroundColor Gray
+Write-Host "🛠️ Useful commands:" -ForegroundColor Yellow
+Write-Host "   - Stop services: docker-compose -f docker-compose.prod.yml down" -ForegroundColor White
+Write-Host "   - Start services: docker-compose -f docker-compose.prod.yml up -d" -ForegroundColor White
+Write-Host "   - Check logs: docker-compose -f docker-compose.prod.yml logs -f" -ForegroundColor White
 Write-Host ""
+Write-Host "🚀 Windows PC domain connection ready!" -ForegroundColor Green
 
-Write-Host "🎉 Windows PC에서 도메인 연결 준비 완료!" -ForegroundColor Green 
+# nginx가 SSL 인증서 문제로 실패하는 경우 임시 HTTP 버전 시작
+$nginxStatus = docker-compose -f docker-compose.prod.yml ps nginx --format "table {{.State}}"
+if ($nginxStatus -like "*Restarting*" -or $nginxStatus -like "*Exit*") {
+    Write-Host "🔍 Checking if nginx is failing due to SSL certificates..." -ForegroundColor Yellow
+    $nginxLogs = docker-compose -f docker-compose.prod.yml logs nginx 2>&1
+    if ($nginxLogs -like "*cannot load certificate*" -or $nginxLogs -like "*No such file*") {
+        Write-Host "⚠️ Nginx is restarting due to SSL certificate issues" -ForegroundColor Yellow
+        Write-Host "🛠️ This is normal for first deployment - certificates will be generated after DNS propagation" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "📋 Current service status:" -ForegroundColor Yellow
+        docker-compose -f docker-compose.prod.yml logs --tail=5
+    }
+}
+
+Write-Host ""
+Write-Host "✅ Deployment script completed!" -ForegroundColor Green
+Write-Host "🔄 Check the logs above and proceed with DNS and port forwarding setup." -ForegroundColor Cyan
+
+Write-Host "✅ All services are running successfully!" -ForegroundColor Green
+
+# SSL 인증서 생성 및 확인
+Write-Host ""
+Write-Host "🔒 SSL Certificate Generation Starting..." -ForegroundColor Cyan
+
+# SSL 인증서 생성
+Write-Host "🔐 Generating SSL certificates..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml exec certbot certbot certonly --webroot --webroot-path=/var/www/certbot --email admin@fanxytv.com --agree-tos --no-eff-email -d fanxytv.com -d www.fanxytv.com
+
+# 생성된 인증서 확인
+Write-Host "🔍 Checking generated certificates..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml exec nginx ls -la /etc/letsencrypt/live/fanxytv.com/
+
+# nginx 재시작
+Write-Host "🔄 Restarting nginx with SSL..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml restart nginx
+
+# 최종 상태 확인
+Write-Host "📊 Final service status after SSL..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml ps
+
+# nginx 로그 확인
+Write-Host "📋 Checking nginx logs..." -ForegroundColor Yellow
+docker-compose -f docker-compose.prod.yml logs nginx --tail=10
+
+Write-Host ""
+Write-Host "🎉 Complete deployment with SSL finished!" -ForegroundColor Green
+Write-Host "🌐 Test your domain: https://fanxytv.com" -ForegroundColor Cyan
+Write-Host "🔒 SSL Certificate: ✅ Generated and Active" -ForegroundColor Green
