@@ -38,7 +38,7 @@ export default function ControlPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  const API_BASE_URL = "http://127.0.0.1:8000";
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
   const showStatus = (message: string, duration = 3000) => {
     setStatusMessage(message);
