@@ -34,17 +34,24 @@ export default function ControlPage() {
   
   // 서버 측 웹캠 인덱스 직접 입력
   const [cameraIndex, setCameraIndex] = useState<number>(0);
-  
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  const [apiBaseUrl, setApiBaseUrl] = useState('');
 
+  useEffect(() => {
+    // 클라이언트 사이드에서만 실행되도록 하여 window 객체 사용 가능
+    const host = window.location.hostname;
+    setApiBaseUrl(`http://${host}:8080`);
+  }, []);
+  
   const showStatus = (message: string, duration = 3000) => {
     setStatusMessage(message);
     setTimeout(() => setStatusMessage(""), duration);
   };
 
   const handleApiCall = async (endpoint: string, options: RequestInit = {}, successMessage?: string) => {
+    if (!apiBaseUrl) return null; // apiBaseUrl이 아직 설정되지 않았으면 요청을 보내지 않음
+
     try {
-      const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+      const response = await fetch(`${apiBaseUrl}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         ...options,
