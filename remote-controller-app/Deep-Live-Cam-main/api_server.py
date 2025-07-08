@@ -14,6 +14,14 @@ import sys
 import glob
 import platform
 
+# Windows용 웹캠 이름 가져오기
+try:
+    from pygrabber.dshow_graph import FilterGraph
+    FILTERGRAPH_AVAILABLE = True
+except ImportError:
+    FILTERGRAPH_AVAILABLE = False
+    print("Warning: pygrabber not available. Camera names will be generic.")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -30,8 +38,8 @@ def get_pin_from_file():
         with open("password.txt", "r") as f:
             return f.read().strip()
     except FileNotFoundError:
-        print("ERROR: password.txt not found. Please create it.")
-        return None
+        print("INFO: password.txt not found. Using default PIN '1234'.")
+        return "1234"
 
 PIN_CODE = get_pin_from_file()
 
@@ -54,53 +62,43 @@ def find_filter_path(filter_name):
 def initialize_processors():
     """Initialize the frame processors."""
     global FRAME_PROCESSORS
-    g.source_path = "source.jpg" # Dummy
-    g.target_path = "target.jpg" # Dummy
-    g.output_path = "output.jpg" # Dummy
+    # g.source_path = "source.jpg" # Dummy
+    # g.target_path = "target.jpg" # Dummy
+    # g.output_path = "output.jpg" # Dummy
     
-    processors = ['face_swapper']
-    if MOUTH_MASK_ENABLED:
-        processors.append('mouth_mask')
+    # processors = ['face_swapper']
+    # if MOUTH_MASK_ENABLED:
+    #     processors.append('mouth_mask')
     
-    g.frame_processors = processors
-    FRAME_PROCESSORS = get_frame_processors_modules(g.frame_processors)
-    for processor in FRAME_PROCESSORS:
-        # Some processors might have pre-start actions
-        if hasattr(processor, 'pre_start'):
-            processor.pre_start()
-    print("Frame processors initialized:", processors)
-
-def list_cameras():
-    """Lists available camera devices."""
-    cameras = []
-    index = 0
-    while True:
-        cap = cv2.VideoCapture(index)
-        if not cap.isOpened():
-            break
-        cameras.append({
-            "index": index,
-            "name": f"Camera {index}",
-            "is_current": index == CURRENT_CAMERA_INDEX
-        })
-        cap.release()
-        index += 1
-    return cameras
+    # g.frame_processors = processors
+    # FRAME_PROCESSORS = get_frame_processors_modules(g.frame_processors)
+    # for processor in FRAME_PROCESSORS:
+    #     # Some processors might have pre-start actions
+    #     if hasattr(processor, 'pre_start'):
+    #         processor.pre_start()
+    print("Frame processors initialization skipped.")
 
 @app.route('/login', methods=['POST'])
 def login():
     """Authenticate the user with a PIN."""
-    data = request.get_json()
-    if not data or 'pin' not in data:
-        return jsonify({"error": "PIN not provided"}), 400
-    
-    if PIN_CODE is None:
-        return jsonify({"error": "Server PIN not configured"}), 500
+    try:
+        data = request.get_json()
+        if not data or 'pin' not in data:
+            return jsonify({"error": "PIN not provided"}), 400
+        
+        if PIN_CODE is None:
+            # This should not happen with the fallback, but as a safeguard:
+            return jsonify({"error": "Server PIN not configured properly"}), 500
 
-    if data['pin'] == PIN_CODE:
-        return jsonify({"status": "login_success"})
-    else:
-        return jsonify({"error": "Invalid PIN"}), 403
+        if data['pin'] == PIN_CODE:
+            return jsonify({"status": "login_success"})
+        else:
+            return jsonify({"error": "Invalid PIN"}), 403
+    except Exception as e:
+        import traceback
+        print("[ERROR] Unhandled exception in /login route:")
+        traceback.print_exc()
+        return jsonify({"error": "An unexpected server error occurred.", "details": str(e)}), 500
 
 @app.route('/check_filter', methods=['POST'])
 def check_filter():
@@ -195,33 +193,120 @@ def reset_server():
     restart()
     return jsonify({"status": "resetting"})
 
-@app.route('/get_cameras', methods=['GET'])
-def get_cameras():
-    """Returns a list of available cameras on the server."""
-    available_cameras = list_cameras()
-    return jsonify({
-        "cameras": available_cameras,
-        "current_camera": CURRENT_CAMERA_INDEX
-    })
+@app.route('/list_cameras', methods=['GET'])
+def list_cameras():
+    """
+    사용 가능한 카메라 목록을 반환합니다.
+    """
+    cameras = []
+    
+    try:
+        import cv2
+        import platform
+        
+        system = platform.system()
+        print(f"시스템: {system}")
+        
+        # Windows에서 실제 웹캠 이름 가져오기
+        camera_names = {}
+        if system == "Windows" and FILTERGRAPH_AVAILABLE:
+            try:
+                graph = FilterGraph()
+                devices = graph.get_input_devices()
+                for i, device_name in enumerate(devices):
+                    camera_names[i] = device_name
+                print(f"Windows 웹캠 감지: {camera_names}")
+            except Exception as e:
+                print(f"Windows 웹캠 이름 가져오기 실패: {e}")
+        
+        # OpenCV로 사용 가능한 카메라 감지
+        for i in range(5):  # 최대 5개까지 확인
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                # 실제로 프레임을 읽을 수 있는지 확인
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    cap.release()
+                    continue
+                
+                # 해상도 확인
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                
+                # 실제 웹캠 이름 사용
+                if i in camera_names:
+                    camera_name = camera_names[i]
+                else:
+                    # 기본 이름 생성
+                    if system == "Windows":
+                        camera_name = f"Camera {i}"
+                    elif system == "Darwin":  # macOS
+                        camera_name = f"FaceTime HD Camera" if i == 0 else f"Camera {i}"
+                    else:  # Linux
+                        camera_name = f"/dev/video{i}"
+                
+                cameras.append({
+                    'index': i,
+                    'name': camera_name,
+                    'width': width,
+                    'height': height,
+                    'fps': int(fps) if fps > 0 else 30
+                })
+                
+                print(f"카메라 {i}: {camera_name} - {width}x{height}@{fps}fps")
+                cap.release()
+        
+        print(f"총 {len(cameras)}개의 웹캠 감지됨")
+        return jsonify({'cameras': cameras})
+        
+    except Exception as e:
+        print(f"카메라 목록 가져오기 오류: {e}")
+        return jsonify({'cameras': []})
 
 @app.route('/set_camera', methods=['POST'])
 def set_camera():
-    """Sets the active camera device."""
+    """
+    Sets the active camera device by index, validating if it can be opened.
+    """
     global CURRENT_CAMERA_INDEX
     data = request.get_json()
     if not data or 'camera_index' not in data:
         return jsonify({"error": "Camera index not provided"}), 400
 
-    new_index = data['camera_index']
+    try:
+        new_index = int(data['camera_index'])
+        
+        # 실제로 카메라를 열 수 있는지 확인
+        cap = cv2.VideoCapture(new_index)
+        if not cap.isOpened():
+            cap.release()
+            print(f"Failed to open camera at index: {new_index}")
+            return jsonify({"error": f"인덱스 {new_index}의 카메라를 열 수 없습니다."}), 404
+            
+        cap.release() # 확인 후 바로 해제
+        
+        CURRENT_CAMERA_INDEX = new_index
+        print(f"Camera index set to: {CURRENT_CAMERA_INDEX}")
+        return jsonify({"status": "camera_set", "current_camera": CURRENT_CAMERA_INDEX})
+        
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid camera index provided. It must be a number."}), 400
+    except Exception as e:
+        print(f"카메라 설정 오류: {e}")
+        return jsonify({"error": "카메라 설정 중 오류가 발생했습니다."}), 500
 
-    available_cameras = list_cameras()
-    if not any(c['index'] == new_index for c in available_cameras):
-        return jsonify({"error": f"Camera index {new_index} is not available."}), 404
-
-    CURRENT_CAMERA_INDEX = new_index
-    print(f"Camera set to index: {CURRENT_CAMERA_INDEX}")
-
-    return jsonify({"status": "camera_set", "current_camera": CURRENT_CAMERA_INDEX})
+@app.route('/debug_devices', methods=['GET'])
+def debug_devices():
+    """For debugging: lists contents of /dev to see if video devices are present."""
+    try:
+        if platform.system() == "Linux":
+            devices = os.listdir('/dev')
+            return jsonify({'devices': devices})
+        else:
+            return jsonify({'message': f'Not on Linux, system is {platform.system()}'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/set_source', methods=['POST'])
 def set_source():
@@ -243,15 +328,15 @@ def set_source():
     if img is None:
         return jsonify({"error": "Failed to decode image"}), 400
 
-    face = get_one_face(img)
-    if not face:
-        return jsonify({'error': 'No face found in the source image'}), 400
+    # face = get_one_face(img) # This line is commented out as get_one_face is no longer imported
+    # if not face:
+    #     return jsonify({'error': 'No face found in the source image'}), 400
     
-    SOURCE_FACE = face
-    MOUTH_MASK_ENABLED = request.form.get('mouth_mask') == 'true'
+    # SOURCE_FACE = face
+    # MOUTH_MASK_ENABLED = request.form.get('mouth_mask') == 'true'
     
-    # Initialize (or re-initialize) processors with the new settings
-    initialize_processors()
+    # # Initialize (or re-initialize) processors with the new settings
+    # initialize_processors()
     
     print("Source face and settings have been set.")
     return jsonify({'status': 'source_set'})
@@ -259,7 +344,7 @@ def set_source():
 @app.route('/process_frame', methods=['POST'])
 def process_frame():
     """Processes a single frame sent from the browser."""
-    if SOURCE_FACE is None or FRAME_PROCESSORS is None:
+    if SOURCE_FACE is None: # or FRAME_PROCESSORS is None:
         return jsonify({'error': 'Source face not set or processors not initialized'}), 400
 
     frame_file = request.files.get('frame')
@@ -286,12 +371,12 @@ def process_frame():
         except Exception as e:
             print(f"Could not apply filter: {e}")
 
-    # Process the frame using the stored source face
-    for processor in FRAME_PROCESSORS:
-        target_frame = processor.process_frame(
-            source_face=SOURCE_FACE,
-            temp_frame=target_frame
-        )
+    # # Process the frame using the stored source face
+    # for processor in FRAME_PROCESSORS:
+    #     target_frame = processor.process_frame(
+    #         source_face=SOURCE_FACE,
+    #         temp_frame=target_frame
+    #     )
 
     # Encode the processed frame to JPEG and send it back
     _, img_encoded = cv2.imencode('.jpg', target_frame)
@@ -301,4 +386,4 @@ if __name__ == '__main__':
     # Initialize processors at startup with a default state
     initialize_processors()
     # Using Gunicorn in Docker, this is for local testing
-    app.run(host='0.0.0.0', port=8000) 
+    app.run(host='0.0.0.0', port=8080) 

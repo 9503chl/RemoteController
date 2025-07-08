@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     build-essential \
+    v4l-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the Python application source code into the container

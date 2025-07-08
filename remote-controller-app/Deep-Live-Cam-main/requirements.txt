@@ -3,18 +3,20 @@
 numpy>=1.23.5,<2
 typing-extensions>=4.8.0
 opencv-python==4.10.0.84
-cv2_enumerate_cameras==1.1.15
+# cv2_enumerate_cameras==1.1.15 # pygrabber로 대체
+pygrabber>=0.2.0 # Windows 웹캠 이름 감지
 onnx==1.16.0
 insightface==0.7.3
 psutil==5.9.8
-tk==0.1.0
-customtkinter==5.2.2
+# tk==0.1.0 # 로컬 실행 시 필요 없음
+# customtkinter==5.2.2 # 로컬 실행 시 필요 없음
 pillow==11.1.0
 torch==2.3.0
 torchvision==0.18.0
-onnxruntime-silicon==1.16.3
+onnxruntime==1.16.3
 opennsfw2==0.10.2
 protobuf==4.23.2
 Flask>=2.0
+Flask-Cors>=4.0.0
 werkzeug
-gunicorn==22.0.0
+# gunicorn==22.0.0 # Windows에서는 사용 안함

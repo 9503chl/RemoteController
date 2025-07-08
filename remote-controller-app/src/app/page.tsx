@@ -11,7 +11,7 @@ export default function LoginPage() {
   const handleLogin = async () => {
     setError("");
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/login`, {
+      const response = await fetch(`/api/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -20,13 +20,13 @@ export default function LoginPage() {
       });
 
       if (response.ok) {
-    router.push("/control");
+        router.push("/control");
       } else {
         const data = await response.json();
-        setError(data.error || "Invalid PIN.");
+        setError(data.error || "잘못된 PIN 번호입니다.");
       }
     } catch (err) {
-      setError("Failed to connect to the server. Is it running?");
+      setError("서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.");
       console.error(err);
     }
   };
@@ -35,21 +35,21 @@ export default function LoginPage() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-8">
       <div className="w-full max-w-xs rounded-lg bg-white p-8 shadow-md">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-red-600">WEB Controller</h1>
-          <p className="text-sm text-gray-500">DLC 웹 컨트롤러 v1.0</p>
+          <h1 className="text-2xl font-bold text-red-600">웹 컨트롤러</h1>
+          <p className="text-sm text-gray-500">Deep Live Cam 웹 컨트롤러 v1.0</p>
         </div>
         <div className="mb-4">
           <label htmlFor="pin" className="mb-2 block text-sm font-bold text-gray-700">
-            PIN
+            PIN 번호
           </label>
           <input
             type="password"
             id="pin"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPin(e.target.value)}
+            onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleLogin()}
             className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
-            placeholder="Enter PIN"
+            placeholder="PIN 번호를 입력하세요"
           />
         </div>
         {error && <p className="mb-4 text-xs italic text-red-500">{error}</p>}
@@ -57,7 +57,7 @@ export default function LoginPage() {
           onClick={handleLogin}
           className="focus:shadow-outline w-full rounded bg-black px-4 py-2 font-bold text-white hover:bg-gray-800 focus:outline-none"
         >
-          Login
+          로그인
         </button>
       </div>
     </main>
