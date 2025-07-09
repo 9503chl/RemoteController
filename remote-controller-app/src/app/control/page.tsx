@@ -27,19 +27,9 @@ const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message
   </div>
 );
 
-// Define a type for the camera data received from the backend
-interface ServerCamera {
-    index: number;
-    name: string;
-    width: number;
-    height: number;
-    fps: number;
-}
-
 export default function ControlPage() {
-    const [serverCameras, setServerCameras] = useState<ServerCamera[]>([]);
     const [clientCameras, setClientCameras] = useState<MediaDeviceInfo[]>([]);
-    const [selectedServerCamera, setSelectedServerCamera] = useState<string>('');
+    const [cameraIndex, setCameraIndex] = useState<string>('');
     const [selectedClientCamera, setSelectedClientCamera] = useState<string>('');
     const [filters, setFilters] = useState<string[]>(['Filter1', 'Filter2', 'Filter3']); // 예시 필터
     const [selectedFilter, setSelectedFilter] = useState<string>('');
@@ -49,22 +39,6 @@ export default function ControlPage() {
     const apiUrl = process.env.NODE_ENV === 'development'
         ? '/api'
         : process.env.NEXT_PUBLIC_API_URL;
-
-    // 서버 웹캠 목록 가져오기
-    const getServerCameras = async () => {
-        try {
-            const response = await fetch(`${apiUrl}/list_cameras`);
-            if (!response.ok) {
-                throw new Error('서버 웹캠 목록을 불러오는 데 실패했습니다.');
-            }
-            const data = await response.json();
-            // The backend returns an object like { cameras: [...] }
-            setServerCameras(data.cameras || []);
-        } catch (err) {
-            console.error(err);
-            setError('서버 웹캠 목록을 불러오는 데 실패했습니다.');
-        }
-    };
 
     // 클라이언트 웹캠 목록 가져오기
     const getClientCameras = async () => {
@@ -98,18 +72,39 @@ export default function ControlPage() {
         }
     };
 
-    // 서버 카메라 변경 핸들러
-    const handleCameraChange = async (cameraIndex: number) => {
-        setSelectedServerCamera(cameraIndex.toString());
-        console.log(`Setting server camera to index: ${cameraIndex}`);
+    // 서버 카메라 인덱스 설정 핸들러
+    const handleCameraIndexSet = async () => {
+        if (!cameraIndex) {
+            setError('카메라 인덱스를 입력해주세요.');
+            return;
+        }
+        
+        const index = parseInt(cameraIndex);
+        if (isNaN(index) || index < 0) {
+            setError('유효한 카메라 인덱스를 입력해주세요.');
+            return;
+        }
+
+        console.log(`Setting server camera to index: ${index}`);
         try {
             const res = await fetch(`${apiUrl}/set_camera`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ camera_index: cameraIndex }),
+                body: JSON.stringify({ camera_index: index }),
             });
-            if (!res.ok) throw new Error('Failed to set camera');
+            
+            const result = await res.json();
+            
+            if (!res.ok) {
+                setError(result.error || '카메라 설정에 실패했습니다.');
+                return;
+            }
+            
+            setError(null);
             console.log("Server camera set successfully");
+            // 성공 메시지 표시 (선택사항)
+            alert('카메라 인덱스가 성공적으로 설정되었습니다.');
+            
         } catch (e) {
             console.error(e);
             setError('서버 카메라 설정에 실패했습니다.');
@@ -163,10 +158,8 @@ export default function ControlPage() {
         }
     };
 
-
     useEffect(() => {
         const fetchInitialData = async () => {
-            await getServerCameras();
             await getClientCameras();
             setIsLoading(false);
         };
@@ -200,24 +193,21 @@ export default function ControlPage() {
         </div>
 
         <div className="mb-4">
-          <label htmlFor="cameraIndexSelect" className="mb-2 block text-sm font-bold text-gray-700">
+          <label htmlFor="cameraIndex" className="mb-2 block text-sm font-bold text-gray-700">
             서버 웹캠 인덱스
           </label>
           <div className="flex">
-            <select
-              id="cameraIndexSelect"
-              value={selectedServerCamera}
-              onChange={(e) => handleCameraChange(Number(e.target.value))}
+            <input
+              type="number"
+              id="cameraIndex"
+              value={cameraIndex}
+              onChange={(e) => setCameraIndex(e.target.value)}
               className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
-            >
-              {serverCameras.map((camera) => (
-                <option key={camera.index} value={camera.index}>
-                  {camera.name}
-                </option>
-              ))}
-            </select>
+              placeholder="0, 1, 2..."
+              min="0"
+            />
             <button
-              onClick={() => handleCameraChange(Number(selectedServerCamera))}
+              onClick={handleCameraIndexSet}
               className="rounded-r bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
             >
               적용
@@ -254,16 +244,6 @@ export default function ControlPage() {
           </div>
         )}
       </div>
-
-      {/* The Modal component is no longer used as per the new_code, but keeping it for now */}
-      {/* {isModalOpen && (
-        <Modal
-          title="필터 파일 확인"
-          message="확인 되었습니다."
-          onConfirm={applyFilter}
-          onCancel={() => setIsModalOpen(false)}
-        />
-      )} */}
     </main>
   );
 } 
