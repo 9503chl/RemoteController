@@ -43,6 +43,12 @@ export default function ControlPage() {
     // 클라이언트 웹캠 목록 가져오기
     const getClientCameras = async () => {
         try {
+            // navigator.mediaDevices가 없는 환경 체크
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.warn('MediaDevices API not available');
+                return;
+            }
+            
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             const devices = await navigator.mediaDevices.enumerateDevices();
             const videoDevices = devices.filter(device => device.kind === 'videoinput');
@@ -50,7 +56,7 @@ export default function ControlPage() {
             stream.getTracks().forEach(track => track.stop()); // 스트림 즉시 중지
         } catch (err) {
             console.error(err);
-            setError('클라이언트 웹캠 목록을 불러오는 데 실패했습니다.');
+            // 웹캠 접근 실패는 치명적이지 않으므로 에러 메시지 표시하지 않음
         }
     };
 
@@ -64,7 +70,12 @@ export default function ControlPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filter_name: filterName }),
             });
-            if (!res.ok) throw new Error('Failed to set filter');
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Server error: ${errorText}`);
+            }
+            
             console.log("Filter set successfully");
         } catch (e) {
             console.error(e);
@@ -93,16 +104,24 @@ export default function ControlPage() {
                 body: JSON.stringify({ camera_index: index }),
             });
             
-            const result = await res.json();
-            
             if (!res.ok) {
-                setError(result.error || '카메라 설정에 실패했습니다.');
+                const errorText = await res.text();
+                setError(`카메라 설정 실패: ${errorText}`);
                 return;
+            }
+            
+            // JSON 응답인지 확인
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const result = await res.json();
+                if (result.error) {
+                    setError(result.error);
+                    return;
+                }
             }
             
             setError(null);
             console.log("Server camera set successfully");
-            // 성공 메시지 표시 (선택사항)
             alert('카메라 인덱스가 성공적으로 설정되었습니다.');
             
         } catch (e) {
