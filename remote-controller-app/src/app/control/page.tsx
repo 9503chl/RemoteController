@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Camera, AlertTriangle, Video, Sliders, Power, RefreshCw, Radio } from 'lucide-react';
 
 // A simple modal component
 const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message: string, onConfirm: () => void, onCancel: () => void }) => (
@@ -27,101 +28,138 @@ const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message
 );
 
 export default function ControlPage() {
-  const [filterName, setFilterName] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [isStarted, setIsStarted] = useState(false);
-  
-  // 서버 측 웹캠 인덱스 직접 입력
-  const [cameraIndex, setCameraIndex] = useState<number>(0);
-  const [apiBaseUrl, setApiBaseUrl] = useState('');
+    const [serverCameras, setServerCameras] = useState<Camera[]>([]);
+    const [clientCameras, setClientCameras] = useState<MediaDeviceInfo[]>([]);
+    const [selectedServerCamera, setSelectedServerCamera] = useState<string>('');
+    const [selectedClientCamera, setSelectedClientCamera] = useState<string>('');
+    const [filters, setFilters] = useState<string[]>(['Filter1', 'Filter2', 'Filter3']); // 예시 필터
+    const [selectedFilter, setSelectedFilter] = useState<string>('');
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // 클라이언트 사이드에서만 실행되도록 하여 window 객체 사용 가능
-    const host = window.location.hostname;
-    setApiBaseUrl(`http://${host}:8080`);
-  }, []);
-  
-  const showStatus = (message: string, duration = 3000) => {
-    setStatusMessage(message);
-    setTimeout(() => setStatusMessage(""), duration);
-  };
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-  const handleApiCall = async (endpoint: string, options: RequestInit = {}, successMessage?: string) => {
-    if (!apiBaseUrl) return null; // apiBaseUrl이 아직 설정되지 않았으면 요청을 보내지 않음
+    // 서버 웹캠 목록 가져오기
+    const getServerCameras = async () => {
+        try {
+            const response = await fetch(`${apiUrl}/list_cameras`);
+            if (!response.ok) {
+                throw new Error('서버 웹캠 목록을 불러오는 데 실패했습니다.');
+            }
+            const data = await response.json();
+            setServerCameras(data);
+        } catch (err) {
+            console.error(err);
+            setError('서버 웹캠 목록을 불러오는 데 실패했습니다.');
+        }
+    };
 
-    try {
-      const response = await fetch(`${apiBaseUrl}/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
-      });
-      const data = await response.json();
-      if (response.ok) {
-        showStatus(successMessage || data.status);
-        return data;
-      } else {
-        showStatus(`Error: ${data.error || 'Unknown error'}`);
-        return null;
-      }
-    } catch (err) {
-      showStatus("Error: Failed to connect to server.");
-      console.error(err);
-      return null;
-    }
-  };
+    // 클라이언트 웹캠 목록 가져오기
+    const getClientCameras = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            setClientCameras(videoDevices);
+            stream.getTracks().forEach(track => track.stop()); // 스트림 즉시 중지
+        } catch (err) {
+            console.error(err);
+            setError('클라이언트 웹캠 목록을 불러오는 데 실패했습니다.');
+        }
+    };
 
-  const checkFilter = async () => {
-    if (!filterName) {
-      showStatus("필터 명을 입력해주세요.");
-      return;
-    }
-    const data = await handleApiCall(
-      'check_filter', 
-      { body: JSON.stringify({ filter_name: filterName }) } as RequestInit,
-      "필터 파일 확인 완료."
-    );
-    if(data && data.status === 'filter_exists') {
-      setIsModalOpen(true);
-    }
-  };
-  
-  const applyFilter = async () => {
-    const data = await handleApiCall(
-        'set_filter',
-        { body: JSON.stringify({ filter_name: filterName }) } as RequestInit,
-        `필터 적용됨: ${filterName}`
-    );
-    if (data) {
-        setIsStarted(false);
-    }
-    setIsModalOpen(false);
-  };
+    // 필터 변경 핸들러
+    const handleFilterChange = async (filterName: string) => {
+        setSelectedFilter(filterName);
+        console.log(`Setting filter to: ${filterName}`);
+        try {
+            const res = await fetch(`${apiUrl}/set_filter`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter_name: filterName }),
+            });
+            if (!res.ok) throw new Error('Failed to set filter');
+            console.log("Filter set successfully");
+        } catch (e) {
+            console.error(e);
+            setError('필터 설정에 실패했습니다.');
+        }
+    };
 
-  const handleStart = async () => {
-    const data = await handleApiCall('start', {}, '프로그램 시작됨.');
-    if (data && data.status === 'started') {
-        setIsStarted(true);
-    }
-  };
+    // 서버 카메라 변경 핸들러
+    const handleCameraChange = async (cameraIndex: number) => {
+        setSelectedServerCamera(cameraIndex.toString());
+        console.log(`Setting server camera to index: ${cameraIndex}`);
+        try {
+            const res = await fetch(`${apiUrl}/set_camera`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera_index: cameraIndex }),
+            });
+            if (!res.ok) throw new Error('Failed to set camera');
+            console.log("Server camera set successfully");
+        } catch (e) {
+            console.error(e);
+            setError('서버 카메라 설정에 실패했습니다.');
+        }
+    };
 
-  const handleReset = async () => {
-      await handleApiCall('reset', {}, '프로그램 재시작 중...');
-      setIsStarted(false);
-  }
+    // START 버튼 핸들러
+    const handleStart = async () => {
+        console.log("START button clicked");
+        setError(null);
+        try {
+            const res = await fetch(`${apiUrl}/start`, {
+                method: 'POST',
+            });
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || 'Failed to start processing');
+            }
+            console.log("Processing started successfully");
+        } catch (e) {
+            console.error(e);
+            if (e instanceof Error) {
+                setError(`시작 실패: ${e.message}`);
+            } else {
+                setError('알 수 없는 오류로 시작에 실패했습니다.');
+            }
+        }
+    };
+    
+    // RESET 버튼 핸들러
+    const handleReset = async () => {
+        console.log("RESET button clicked");
+        try {
+            await fetch(`${apiUrl}/reset`, { method: 'POST' });
+            alert("서버가 재시작됩니다. 잠시 후 페이지를 새로고침해주세요.");
+        } catch (e) {
+            console.error(e);
+            setError('리셋 요청에 실패했습니다.');
+        }
+    };
 
-  // 서버 웹캠 인덱스 설정
-  const handleSetCamera = async () => {
-    await handleApiCall(
-      'set_camera',
-      { body: JSON.stringify({ camera_index: cameraIndex }) },
-      `카메라 인덱스 ${cameraIndex}(으)로 설정됨.`
-    );
-  };
+    // LIVE 버튼 핸들러
+    const handleLive = async () => {
+        console.log("LIVE button clicked");
+        try {
+            await fetch(`${apiUrl}/live`, { method: 'POST' });
+            console.log("Live mode toggled");
+        } catch (e) {
+            console.error(e);
+            setError('라이브 모드 전환에 실패했습니다.');
+        }
+    };
 
-  useEffect(() => {
-    // 페이지 로드 시 더 이상 웹캠 목록을 가져오지 않음
-  }, []);
+
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            await getServerCameras();
+            await getClientCameras();
+            setIsLoading(false);
+        };
+        fetchInitialData();
+    }, []);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
@@ -135,13 +173,13 @@ export default function ControlPage() {
             <input
               type="text"
               id="filterName"
-              value={filterName}
-              onChange={(e) => setFilterName(e.target.value)}
+              value={selectedFilter}
+              onChange={(e) => handleFilterChange(e.target.value)}
               className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
               placeholder="확장자 제외하고 입력"
             />
             <button
-              onClick={checkFilter}
+              onClick={() => handleFilterChange(selectedFilter)}
               className="rounded-r bg-gray-600 px-4 py-2 font-bold text-white hover:bg-gray-700"
             >
               확인
@@ -156,18 +194,18 @@ export default function ControlPage() {
           <div className="flex">
             <select
               id="cameraIndexSelect"
-              value={cameraIndex}
-              onChange={(e) => setCameraIndex(Number(e.target.value))}
+              value={selectedServerCamera}
+              onChange={(e) => handleCameraChange(Number(e.target.value))}
               className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
             >
-              {Array.from({ length: 11 }, (_, i) => i).map((index) => (
+              {serverCameras.map((camera, index) => (
                 <option key={index} value={index}>
-                  {index}
+                  {camera.name}
                 </option>
               ))}
             </select>
             <button
-              onClick={handleSetCamera}
+              onClick={() => handleCameraChange(Number(selectedServerCamera))}
               className="rounded-r bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
             >
               적용
@@ -183,8 +221,8 @@ export default function ControlPage() {
                 START
             </button>
             <button
-                onClick={() => handleApiCall('live', {}, '라이브 모드.')}
-                disabled={!isStarted}
+                onClick={handleLive}
+                disabled={!selectedFilter}
                 className="rounded bg-black px-4 py-3 font-bold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-500"
             >
                 LIVE
@@ -198,21 +236,22 @@ export default function ControlPage() {
           RESET
         </button>
 
-        {statusMessage && (
-          <div className="mt-4 rounded-md bg-gray-200 p-3 text-center text-sm text-gray-800">
-            {statusMessage}
+        {error && (
+          <div className="mt-4 rounded-md bg-red-200 p-3 text-center text-sm text-red-800">
+            {error}
           </div>
         )}
       </div>
 
-      {isModalOpen && (
+      {/* The Modal component is no longer used as per the new_code, but keeping it for now */}
+      {/* {isModalOpen && (
         <Modal
           title="필터 파일 확인"
           message="확인 되었습니다."
           onConfirm={applyFilter}
           onCancel={() => setIsModalOpen(false)}
         />
-      )}
+      )} */}
     </main>
   );
 } 
