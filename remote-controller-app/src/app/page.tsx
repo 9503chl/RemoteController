@@ -11,7 +11,10 @@ export default function LoginPage() {
   const handleLogin = async () => {
     setError("");
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+      const apiUrl = process.env.NODE_ENV === 'development' 
+        ? '/api' 
+        : process.env.NEXT_PUBLIC_API_URL;
+
       const response = await fetch(`${apiUrl}/login`, {
         method: "POST",
         headers: {

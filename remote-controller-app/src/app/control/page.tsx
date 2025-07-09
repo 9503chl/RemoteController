@@ -27,8 +27,17 @@ const Modal = ({ title, message, onConfirm, onCancel }: { title: string, message
   </div>
 );
 
+// Define a type for the camera data received from the backend
+interface ServerCamera {
+    index: number;
+    name: string;
+    width: number;
+    height: number;
+    fps: number;
+}
+
 export default function ControlPage() {
-    const [serverCameras, setServerCameras] = useState<Camera[]>([]);
+    const [serverCameras, setServerCameras] = useState<ServerCamera[]>([]);
     const [clientCameras, setClientCameras] = useState<MediaDeviceInfo[]>([]);
     const [selectedServerCamera, setSelectedServerCamera] = useState<string>('');
     const [selectedClientCamera, setSelectedClientCamera] = useState<string>('');
@@ -37,7 +46,9 @@ export default function ControlPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const apiUrl = process.env.NODE_ENV === 'development'
+        ? '/api'
+        : process.env.NEXT_PUBLIC_API_URL;
 
     // 서버 웹캠 목록 가져오기
     const getServerCameras = async () => {
@@ -47,7 +58,8 @@ export default function ControlPage() {
                 throw new Error('서버 웹캠 목록을 불러오는 데 실패했습니다.');
             }
             const data = await response.json();
-            setServerCameras(data);
+            // The backend returns an object like { cameras: [...] }
+            setServerCameras(data.cameras || []);
         } catch (err) {
             console.error(err);
             setError('서버 웹캠 목록을 불러오는 데 실패했습니다.');
@@ -198,8 +210,8 @@ export default function ControlPage() {
               onChange={(e) => handleCameraChange(Number(e.target.value))}
               className="focus:shadow-outline flex-grow appearance-none rounded-l border px-3 py-2 leading-tight text-gray-700 shadow focus:outline-none"
             >
-              {serverCameras.map((camera, index) => (
-                <option key={index} value={index}>
+              {serverCameras.map((camera) => (
+                <option key={camera.index} value={camera.index}>
                   {camera.name}
                 </option>
               ))}
